@@ -8,6 +8,7 @@ import { connection, webrtc } from './network';
 import { codecs, mediaDevices, speechVoices } from './media';
 import { drm } from './drm';
 import { adBlocker } from './adblock';
+import { privateMode } from '../privacy';
 import { sensors, battery, permissions, storage } from './device';
 import { hardware } from './hardware';
 import { plugins, browserSpecs, extensions } from './specs';
@@ -41,6 +42,7 @@ export const COLLECTORS: Collector[] = [
   storage,
   extensions,
   adBlocker,
+  privateMode,
 ];
 
 export type { Collector };

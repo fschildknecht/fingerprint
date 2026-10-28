@@ -64,7 +64,7 @@ Via script tag: `FingerprintLight.getLight()` / `FingerprintAdvanced.getAdvanced
 | Browser specs | cookies (enabled + writable), Apple Pay version, Payment Request, WebAuthn, WebAssembly (SIMD/threads), JS syntax support, HTTP version, secure/isolated context |
 | Plugins & blockers | plugin list with MIME types; **ad-blocker detection** with two independent methods (hidden bait elements + blocked ad request, each reported separately); DOM/global hints for extensions (Dark Reader, Grammarly, wallets, DevTools). No `chrome-extension://` probing |
 | DRM | **Widevine** (L1/L2/L3, HDCP version), **PlayReady** (SL3000/SL2000, Edge/Windows), **FairPlay**, ClearKey. Tells you whether HD/4K streaming is possible. Skipped in Firefox (probing can trigger an install prompt) |
-| Analysis | bot score, patched-native detection, cross-signal inconsistencies, privacy tools (Brave, Tor/RFP, GPC) |
+| Analysis | bot score, patched-native detection, cross-signal inconsistencies, privacy tools (Brave, Tor, RFP, GPC), private-window detection |
 
 Opt-in collectors (`include: ['localFonts']`) are the ones that can trigger browser UI.
 
@@ -81,6 +81,22 @@ score = (weight of signals we obtained / weight of all signals) - penalties     
 - Every factor and penalty is returned in `confidence.factors` / `confidence.penalties`, so a score is never a black box.
 
 In Light the score is *confidence in the classification*. In Advanced it is *confidence the ID is reproducible and not forged*. Both are heuristics, not probabilities.
+
+## Private window and Tor detection
+
+`fp.analysis.tor` and `fp.analysis.privateMode`.
+
+**Tor Browser / Mullvad Browser** (`tor.isTor`, `tor.score`, `tor.signals`): Tor Browser is Firefox ESR with `resistFingerprinting`, which leaves a recognisable pattern: a frozen Windows UA on every OS, UTC timezone, 2 cores, window size snapped to 200x100 steps (letterboxing), `screen` equal to the window, 100 ms timers. A verdict needs one structural tell (frozen UA or letterboxing) plus enough weaker hints. Mullvad Browser ships the same fingerprint on purpose, so the two cannot be told apart. This detects the *browser*; whether traffic really exits through Tor is only visible server-side (compare the IP with the public exit-node list).
+
+**Private / incognito window** (`privateMode.isPrivate`: `true`, `false` or `null` = cannot tell):
+
+| Browser | Method | Status |
+|---|---|---|
+| Chrome / Edge | IndexedDB commit timing: `durability: "strict"` vs `"relaxed"`. Incognito keeps IndexedDB in memory, so both cost the same (ratio ~1); on disk strict is ~3x slower | **verified** on Chrome and Edge 155 (headless and windowed): normal 2.7-3.2, incognito 1.0-1.2, threshold 1.3. Quota-based checks no longer work (identical in both modes) |
+| Firefox | Origin Private File System throws a "Security error" in private windows; older builds fail IndexedDB with `InvalidStateError` | implemented, **untested here** |
+| Safari | 17+: OPFS error "unknown transient reason"; 13-18: IndexedDB refuses to store a Blob; older: Web SQL / localStorage throw | implemented, **untested here** |
+
+These techniques follow the ones documented by [detectIncognito.js](https://github.com/Joe12387/detectIncognito) and are reimplemented here. Browser vendors close such side channels on purpose, so treat `false` as "no evidence" and `null` as "undetectable". Confidence drops as the timing ratio approaches the threshold. Disks with near-free fsync (some Android storage) can make a normal profile look private, which is why the median of 7-15 rounds is used. The Chromium result is covered by `npm run test:browser`, which compares a normal and an off-the-record browser context.
 
 ## Manipulation score
 
@@ -121,7 +137,8 @@ Fingerprints are personal data under GDPR/ePrivacy in most jurisdictions. Use th
 ## Development
 
 ```bash
-npm test            # vitest
+npm test            # vitest (unit tests)
+npm run test:browser # real Chrome/Edge: incognito + spoof detection
 npm run typecheck
 npm run build
 ```

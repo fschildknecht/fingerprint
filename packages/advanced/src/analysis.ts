@@ -3,6 +3,10 @@ import { nav, round } from '@fingerprint/core';
 import type { LightResult } from '@fingerprint/light';
 import { iframeMismatch, ownPropertyOverrides, scoreManipulation, screenMediaMismatch, workerMismatch } from './manipulation';
 import type { ManipulationAnalysis, ManipulationSignal } from './manipulation';
+import { detectTor } from './privacy';
+import type { PrivateModeResult, TorAnalysis } from './privacy';
+
+export type { PrivateModeResult, TorAnalysis, TorSignal } from './privacy';
 
 export type { ManipulationAnalysis, ManipulationSignal, ManipulationCategory } from './manipulation';
 
@@ -21,6 +25,10 @@ export interface BotAnalysis {
 }
 
 export interface Analysis {
+  /** Is this Tor Browser / Mullvad Browser? (the browser, not the network path) */
+  tor: TorAnalysis;
+  /** Incognito / private window. isPrivate is null when the browser gives no usable signal. */
+  privateMode: PrivateModeResult | null;
   /** How likely the fingerprint was deliberately altered. Independent of the bot score. */
   manipulation: ManipulationAnalysis;
   bot: BotAnalysis;
@@ -185,14 +193,19 @@ export async function analyze(light: LightResult, c: Components): Promise<Analys
   // --- Privacy tooling ---
   const privacyTools: Analysis['privacyTools'] = [];
   if (light.browser.isBrave) privacyTools.push({ name: 'Brave Shields', confidence: 0.95, evidence: 'navigator.brave present (canvas/audio farbling likely)' });
-  const precision = c.engine?.timePrecisionMs;
-  if (light.browser.engine === 'Gecko' && typeof precision === 'number' && precision >= 1) {
-    const tzUtc = tz === 'UTC' || tz === 'Etc/UTC';
+  const tor = detectTor(light, c);
+  const privateMode: PrivateModeResult | null = c.privateMode ?? null;
+  if (tor.isTor) {
+    privacyTools.push({ name: 'Tor Browser / Mullvad Browser', confidence: tor.score, evidence: tor.signals.map((s) => s.id).join(', ') });
+  } else if (light.browser.engine === 'Gecko' && typeof c.engine?.timePrecisionMs === 'number' && c.engine.timePrecisionMs >= 1) {
     privacyTools.push({
-      name: tzUtc ? 'Tor Browser / Firefox resistFingerprinting' : 'Firefox privacy.reduceTimerPrecision',
-      confidence: tzUtc ? 0.85 : 0.5,
-      evidence: `timer precision ${precision}ms${tzUtc ? ', timezone forced to UTC' : ''}`,
+      name: 'Firefox resistFingerprinting / reduced timer precision',
+      confidence: 0.5,
+      evidence: `timer precision ${c.engine.timePrecisionMs}ms`,
     });
+  }
+  if (privateMode?.isPrivate) {
+    privacyTools.push({ name: 'Private window', confidence: privateMode.confidence, evidence: `${privateMode.browser}: ${privateMode.method}` });
   }
   if (n.globalPrivacyControl === true || n.doNotTrack === '1') privacyTools.push({ name: 'Privacy signal (GPC/DNT)', confidence: 0.9, evidence: 'user opted out of tracking' });
   if (c.canvas?.randomized && !light.browser.isBrave) privacyTools.push({ name: 'Canvas randomizer (extension / anti-detect browser)', confidence: 0.8, evidence: 'canvas noise detected' });
@@ -229,6 +242,8 @@ export async function analyze(light: LightResult, c: Components): Promise<Analys
   const manipulation = scoreManipulation(m);
   const score = round(1 - signals.reduce((p, s) => p * (1 - s.weight), 1));
   return {
+    tor,
+    privateMode,
     manipulation,
     bot: { score, isBot: score >= 0.6, signals },
     tampering,

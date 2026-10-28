@@ -82,10 +82,15 @@ async function webauthn(): Promise<unknown> {
       return null;
     }
   };
+  // Independent questions: ask in parallel so the slowest one, not their sum, sets the pace.
+  const [platformAuthenticator, conditionalMediation] = await Promise.all([
+    ask('isUserVerifyingPlatformAuthenticatorAvailable'),
+    ask('isConditionalMediationAvailable'),
+  ]);
   return {
     supported: true,
-    platformAuthenticator: await ask('isUserVerifyingPlatformAuthenticatorAvailable'),
-    conditionalMediation: await ask('isConditionalMediationAvailable'),
+    platformAuthenticator,
+    conditionalMediation,
     clientCapabilities: typeof P.getClientCapabilities === 'function',
   };
 }
@@ -107,7 +112,7 @@ export const browserSpecs: Collector = {
   id: 'browserSpecs',
   stable: true,
   bits: 4,
-  timeoutMs: 3000,
+  timeoutMs: 5000,
   async run() {
     const w = window as any;
     const n = nav();

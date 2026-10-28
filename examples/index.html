@@ -173,7 +173,7 @@ function advancedCards(r) {
     'GPU': ['webgl'], 'Network': ['webrtc', 'connection'], 'Hardware': ['hardware', 'sensors'], 'Battery': ['battery'],
     'Fonts / voices': ['fonts', 'speechVoices', 'mediaDevices'], 'Canvas & audio': ['canvas', 'audio', 'audioContext'],
     'System & engine': ['navigator', 'timezone', 'intl', 'math', 'css', 'features', 'engine', 'codecs'],
-    'Storage & permissions': ['storage', 'permissions'],
+    'Storage & permissions': ['storage', 'permissions'], 'Private mode & Tor': ['privateMode'],
   };
   const card = (t, b) => baseCard(t, b, IDS[t] ? timing(c, IDS[t]) : analysisMs);
   const cv = val('canvas'), au = val('audio'), ac = val('audioContext'), nv = val('navigator'), tz = val('timezone'), en = val('engine'), ft = val('features'), cs = val('css'), cd = val('codecs'), st = val('storage'), pm = val('permissions');
@@ -207,9 +207,17 @@ function advancedCards(r) {
       ['Display resolution', cs && cs.resolutionDppx && cs.resolutionDppx + ' dppx'],
       ['Playable media types', cd && Object.values(cd.canPlayType).filter(Boolean).length + ' / ' + Object.keys(cd.canPlayType).length],
     ])),
+    card('Private mode & Tor', (() => {
+      const pm = a.privateMode, tor = a.tor;
+      const pmText = !pm ? '–' : pm.isPrivate === null ? 'cannot tell' : (pm.isPrivate ? 'yes' : 'no') + ' (' + pct(pm.confidence) + ')';
+      const hint = pm && pm.isPrivate === null && pm.detail && pm.detail.reason ? '<p class="sub" style="margin:6px 0 0;font-size:.8rem">' + esc(pm.detail.reason) + '</p>' : '';
+      return dl([
+        ['Private window', pmText], ['· method', pm && pm.method],
+        ['Tor / Mullvad Browser', (tor.isTor ? 'yes' : 'no') + ' (' + pct(tor.score) + ')'],
+      ]) + hint + (tor.signals.length ? '<ul>' + tor.signals.map((x) => '<li>' + esc(x.id) + ': ' + esc(x.detail) + '</li>').join('') + '</ul>' : '');
+    })()),
     card('Storage & permissions', dl([
       ['Storage quota', st && st.quota && Math.round(st.quota / 1048576) + ' MB'],
-      ['Private mode likely', st && yn2(st.privateModeLikely)],
       ['IndexedDB', st && yn2(st.indexedDB)], ['Persistent storage', st && yn2(st.persisted)],
       ['Permissions granted', pm && perm.filter((x) => x === 'granted').length], ['Permissions denied', pm && perm.filter((x) => x === 'denied').length],
       ['Permissions to ask', pm && perm.filter((x) => x === 'prompt').length],

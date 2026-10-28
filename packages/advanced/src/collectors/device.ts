@@ -136,8 +136,7 @@ export const storage: Collector = {
       cacheStorage: 'caches' in w,
       serviceWorker: 'serviceWorker' in n,
       cookies: n.cookieEnabled ?? null,
-      // Chromium incognito caps quota far below normal; Firefox private mode blocks IndexedDB. Heuristic only.
-      privateModeLikely: (quota !== null && quota < 120 * 1024 * 1024) || idb === false,
+      // Private-window detection lives in the dedicated privateMode collector.
     };
   },
 };

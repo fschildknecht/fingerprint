@@ -67,7 +67,7 @@ export const hardware: Collector = {
   id: 'hardware',
   stable: true,
   bits: 5,
-  timeoutMs: 3000,
+  timeoutMs: 6000, // first WebGPU adapter request can compile shaders
   async run() {
     const [webgpu, refreshRateHz] = await Promise.all([webgpuInfo().catch(() => null), measureRefreshRate()]);
     return { webgpu, refreshRateHz: refreshRateHz === null ? null : round(refreshRateHz, 0) };

@@ -9,6 +9,7 @@ import { COLLECTORS } from './collectors';
 import { buildHardware } from './categorize';
 import type { HardwareProfile } from './categorize';
 
+export type { PrivateModeResult, TorAnalysis, TorSignal } from './analysis';
 export type { Analysis, BotAnalysis, BotSignal, ManipulationAnalysis, ManipulationSignal, ManipulationCategory } from './analysis';
 export type { LightResult } from '@fingerprint/light';
 export { COLLECTORS };

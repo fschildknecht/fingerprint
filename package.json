@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:browser": "node tests/browser/run.mjs",
     "demo": "npm run build && node examples/serve.mjs"
   },
   "devDependencies": {
