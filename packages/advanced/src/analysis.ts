@@ -163,8 +163,10 @@ export async function analyze(light: LightResult, c: Components): Promise<Analys
   }
   if (c.canvas?.randomized) inconsistencies.push('Canvas output differs between two identical draws (noise injection)');
   if (light.screen.availWidth > light.screen.width + 1) inconsistencies.push('screen.availWidth exceeds screen.width');
-  if (light.screen.viewport.innerWidth > light.screen.width * 1.05 && light.screen.width > 0 && light.device.type !== 'desktop') {
-    inconsistencies.push('Viewport wider than the screen on a non-desktop device');
+  // Phones/tablets can't have a window wider than their screen. (Bots and desktop browsers can, e.g. headless defaults.)
+  const handheld = light.device.type === 'mobile' || light.device.type === 'tablet';
+  if (handheld && light.screen.width > 0 && light.screen.viewport.innerWidth > light.screen.width * 1.05) {
+    inconsistencies.push('Viewport wider than the screen on a mobile device');
   }
   const brand = light.browser.brands.find((b) => /^(google chrome|microsoft edge|opera|chromium)$/i.test(b.brand));
   if (brand && light.browser.engine === 'Blink') {

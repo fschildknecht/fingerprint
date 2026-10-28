@@ -46,6 +46,8 @@ export interface AdvancedResult {
    */
   battery: { charging: boolean; chargingTime: number | null; dischargingTime: number | null; level: number } | null;
   analysis: Analysis;
+  /** Time spent on bot / tamper / manipulation checks (they include a worker round-trip). */
+  analysisMs: number;
   components: Record<string, ComponentResult>;
   durationMs: number;
 }
@@ -78,7 +80,9 @@ export async function getAdvanced(options: AdvancedOptions = {}): Promise<Advanc
     }
   }
 
+  const analysisStart = now();
   const analysis = await analyze(light, values);
+  const analysisMs = round(now() - analysisStart, 1);
 
   // visitorId: stable components only. Anything the user may toggle between visits is excluded.
   const stableHashes = Object.fromEntries(
@@ -133,6 +137,7 @@ export async function getAdvanced(options: AdvancedOptions = {}): Promise<Advanc
         }
       : null,
     analysis,
+    analysisMs,
     components,
     durationMs: round(now() - start, 1),
   };

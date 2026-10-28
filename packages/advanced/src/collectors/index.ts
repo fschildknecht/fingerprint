@@ -5,7 +5,9 @@ import { audio, audioContext } from './audio';
 import { fonts, localFonts } from './fonts';
 import { navigatorInfo, timezone, intl, math, css, features, engine } from './system';
 import { connection, webrtc } from './network';
-import { codecs, mediaDevices, speechVoices, drm } from './media';
+import { codecs, mediaDevices, speechVoices } from './media';
+import { drm } from './drm';
+import { adBlocker } from './adblock';
 import { sensors, battery, permissions, storage } from './device';
 import { hardware } from './hardware';
 import { plugins, browserSpecs, extensions } from './specs';
@@ -38,6 +40,7 @@ export const COLLECTORS: Collector[] = [
   permissions,
   storage,
   extensions,
+  adBlocker,
 ];
 
 export type { Collector };

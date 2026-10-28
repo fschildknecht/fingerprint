@@ -186,7 +186,7 @@ const GLOBAL_MARKERS: [string, string][] = [
 ];
 
 /**
- * Best-effort extension hints. Does NOT probe chrome-extension:// URLs (slow, invasive, and
+ * Best-effort extension hints (ad blockers: see the adBlocker collector). Does NOT probe chrome-extension:// URLs (slow, invasive, and
  * blocked by most browsers). Content scripts may not have run yet, so absence proves nothing.
  */
 export const extensions: Collector = {
@@ -195,22 +195,12 @@ export const extensions: Collector = {
   bits: 3,
   timeoutMs: 2000,
   async run() {
-    const bait = document.createElement('div');
-    bait.className = 'adsbox ad-banner pub_300x250 textads ad-placeholder';
-    bait.style.cssText = 'position:absolute;left:-999px;top:-999px;width:10px;height:10px';
-    bait.innerHTML = '&nbsp;';
-    document.body.appendChild(bait);
-    await new Promise((r) => setTimeout(r, 60));
-    const cs = getComputedStyle(bait);
-    const adBlocker = !bait.offsetHeight || cs.display === 'none' || cs.visibility === 'hidden' || !bait.isConnected;
-    bait.remove();
-
     const found = new Set<string>();
     for (const [name, sel, attr] of DOM_MARKERS) {
       if (document.querySelector(sel)?.hasAttribute(attr)) found.add(name);
     }
     for (const [name, key] of GLOBAL_MARKERS) if (key in window) found.add(name);
     if (document.querySelector('grammarly-desktop-integration, grammarly-extension')) found.add('Grammarly');
-    return { adBlocker, detected: [...found].sort() };
+    return { detected: [...found].sort() };
   },
 };

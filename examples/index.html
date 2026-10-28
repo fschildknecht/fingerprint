@@ -17,7 +17,8 @@
   button[aria-pressed="true"] { background:var(--acc); border-color:var(--acc); color:#fff; }
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
-  .card h2 { font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:0 0 8px; }
+  .card h2 { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:0 0 8px; }
+  .ms { font-weight:400; letter-spacing:0; text-transform:none; font-variant-numeric:tabular-nums; cursor:help; }
   .big { font-size:1.6rem; font-weight:650; }
   dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:2px 12px; }
   dt { color:var(--mut); } dd { margin:0; word-break:break-word; text-align:right; }
@@ -49,20 +50,38 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '–').replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
 const pct = (n) => Math.round(n * 100) + '%';
 const dl = (rows) => '<dl>' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
-const card = (title, body) => `<div class="card"><h2>${esc(title)}</h2>${body}</div>`;
+// m = { ms, tip, err }: shown as a timing badge in the card header; failures are listed under the card.
+const baseCard = (title, body, m) => {
+  const badge = m ? '<span class="ms" title="' + esc(m.tip || '') + '">' + m.ms + ' ms</span>' : '';
+  const err = m && m.err && m.err.length ? m.err.map((e) => '<p class="bad" style="margin:6px 0 0">✗ ' + esc(e) + '</p>').join('') : '';
+  return '<div class="card"><h2><span>' + esc(title) + '</span>' + badge + '</h2>' + body + err + '</div>';
+};
+const card = (title, body) => baseCard(title, body);
+const fixed = (ms, tip) => ({ ms, tip });
+// Sum of the work done by the collectors behind a card (they run in parallel, so this is effort, not wall time).
+const timing = (c, ids) => {
+  const parts = ids.map((id) => [id, c[id]]).filter(([, x]) => x);
+  return {
+    ms: Math.round(parts.reduce((t, [, x]) => t + x.ms, 0) * 10) / 10,
+    tip: parts.map(([id, x]) => id + ': ' + x.ms + ' ms' + (x.ok ? '' : ' (failed)')).join('\n'),
+    err: parts.filter(([, x]) => !x.ok).map(([id, x]) => id + ': ' + x.error),
+  };
+};
 
-function confidenceCard(conf, id, extra = [], title = 'Confidence', hint = '') {
+function confidenceCard(conf, id, extra = [], title = 'Confidence', hint = '', m) {
   const color = conf.score < 0.4 ? 'var(--bad)' : conf.score < 0.7 ? 'var(--mid)' : 'var(--ok)';
   const pens = conf.penalties.length ? '<ul class="warn">' + conf.penalties.map((p) => `<li>${esc(p.note)} (−${pct(p.amount)})</li>`).join('') + '</ul>' : '';
-  return card(title, `${hint ? '<p class="sub" style="margin:0 0 6px;font-size:.8rem">' + hint + '</p>' : ''}<div class="big">${pct(conf.score)} <small>${esc(conf.level)}</small></div>
+  return baseCard(title, `${hint ? '<p class="sub" style="margin:0 0 6px;font-size:.8rem">' + hint + '</p>' : ''}<div class="big">${pct(conf.score)} <small>${esc(conf.level)}</small></div>
     <div class="bar"><i style="width:${pct(conf.score)};background:${color}"></i></div>
-    ${dl([['Visitor ID', id], ...extra])}${pens}`);
+    ${dl([['Visitor ID', id], ...extra])}${pens}`, m);
 }
 
 function lightCards(r, title, hint) {
   const s = r.screen;
+  const m = fixed(r.durationMs, 'getLight(): all Light signals are collected together');
+  const card = (t, b) => baseCard(t, b, m);
   return [
-    confidenceCard(r.confidence, r.visitorId, [], title, hint),
+    confidenceCard(r.confidence, r.visitorId, [], title, hint, m),
     card('Device', dl([
       ['Type', `${r.device.type} (${pct(r.device.typeConfidence)})`],
       ['Vendor / model', [r.device.vendor, r.device.model].filter(Boolean).join(' ') || null],
@@ -86,11 +105,82 @@ function lightCards(r, title, hint) {
   ].join('');
 }
 
+const yn2 = (b) => (b == null ? '–' : b ? 'yes' : 'no');
+function specsCards(c) {
+  const IDS = { 'Browser specs': ['browserSpecs', 'plugins'], 'Payments & sign-in': ['browserSpecs'], 'DRM / protected content': ['drm'], 'Content blockers': ['adBlocker', 'extensions'] };
+  const card = (t, b) => baseCard(t, b, timing(c, IDS[t]));
+  const v = (k) => (c[k]?.ok ? c[k].value : null);
+  const yn = (b) => (b == null ? '–' : b ? 'yes' : 'no');
+  const out = [];
+
+  const s = v('browserSpecs');
+  if (s) {
+    const wasm = s.webAssembly ? ['simd', 'threads', 'bulkMemory'].filter((k) => s.webAssembly[k]).join(', ') || 'basic' : 'no';
+    const js = Object.values(s.jsFeatures);
+    const pl = v('plugins');
+    out.push(card('Browser specs', dl([
+      ['Cookies', yn(s.cookies.enabled) + ' (writable: ' + yn(s.cookies.writable) + ')'],
+      ['Secure context', yn(s.context.secureContext)],
+      ['Inside iframe', yn(s.context.inIframe)],
+      ['Installed as app (PWA)', yn(s.context.standalonePwa)],
+      ['HTTP version', s.context.httpProtocol],
+      ['Charset', s.document.characterSet],
+      ['WebAssembly', wasm],
+      ['Modern JS features', js.filter(Boolean).length + ' / ' + js.length],
+      ['Plugins', pl ? pl.count + (pl.onlyStandardPdfViewers ? ' (PDF viewers only)' : '') : null],
+    ])));
+    out.push(card('Payments & sign-in', dl([
+      ['Apple Pay', s.applePay.available ? 'v' + s.applePay.maxVersion + (s.applePay.canMakePayments ? ', can pay' : '') : 'no'],
+      ['Payment Request API', yn(s.paymentRequest)],
+      ['WebAuthn / passkeys', yn(s.webauthn.supported)],
+      ['Windows Hello / Touch ID', yn(s.webauthn.platformAuthenticator)],
+      ['Passkey autofill', yn(s.webauthn.conditionalMediation)],
+    ])));
+  }
+
+  const d = v('drm');
+  if (d) {
+    const row = (name, x) => {
+      if (!x) return [name, '–'];
+      if (x.skipped) return [name, 'skipped (Firefox)'];
+      if (!x.available) return [name, 'no'];
+      return [name, [x.securityLevel, x.hdcp && 'HDCP ' + x.hdcp].filter(Boolean).join(' · ') || 'yes'];
+    };
+    out.push(card('DRM / protected content', d.supported === false ? '<p class="sub">EME not available.</p>' : dl([
+      row('Widevine (Google)', d.widevine), row('PlayReady (Microsoft)', d.playready), row('FairPlay (Apple)', d.fairplay), row('ClearKey', d.clearkey),
+    ])));
+  }
+
+  const a = v('adBlocker'), e = v('extensions');
+  if (a || e) {
+    const net = a && a.methods.network.blocked;
+    out.push(card('Content blockers', dl([
+      ['Ad blocker', a ? yn(a.detected) + ' (' + pct(a.confidence) + ' sure)' : null],
+      ['· page elements hidden', a && a.methods.cosmetic.hiddenBaits],
+      ['· ad request blocked', a && (net == null ? 'inconclusive' : yn(net))],
+      ['Built-in blocker (Brave)', a && yn(a.builtInBlocker)],
+      ['Extensions seen', e && (e.detected.join(', ') || 'none')],
+    ])));
+  }
+  return out.join('');
+}
+
 function advancedCards(r) {
   const a = r.analysis, c = r.components;
-  const comp = Object.entries(c).map(([k, v]) => [k, v.ok ? `${v.hash} · ${v.ms}ms${v.stable ? '' : ' · volatile'}` : `✗ ${v.error}`]);
+  const val = (id) => (c[id] && c[id].ok ? c[id].value : null);
+  const analysisMs = fixed(r.analysisMs, 'bot, tamper and manipulation checks (incl. iframe and worker comparison)');
+  const IDS = {
+    'GPU': ['webgl'], 'Network': ['webrtc', 'connection'], 'Hardware': ['hardware', 'sensors'], 'Battery': ['battery'],
+    'Fonts / voices': ['fonts', 'speechVoices', 'mediaDevices'], 'Canvas & audio': ['canvas', 'audio', 'audioContext'],
+    'System & engine': ['navigator', 'timezone', 'intl', 'math', 'css', 'features', 'engine', 'codecs'],
+    'Storage & permissions': ['storage', 'permissions'],
+  };
+  const card = (t, b) => baseCard(t, b, IDS[t] ? timing(c, IDS[t]) : analysisMs);
+  const cv = val('canvas'), au = val('audio'), ac = val('audioContext'), nv = val('navigator'), tz = val('timezone'), en = val('engine'), ft = val('features'), cs = val('css'), cd = val('codecs'), st = val('storage'), pm = val('permissions');
+  const short = (h) => (h ? h.slice(0, 12) : null);
+  const perm = pm && pm.states ? Object.values(pm.states) : [];
   return [
-    confidenceCard(r.confidence, r.visitorId, [['Est. entropy', `~${r.estimatedEntropyBits} bits`], ['Duration', r.durationMs + ' ms']], 'Fingerprint confidence', 'Is the ID reproducible and not forged? (Advanced)'),
+    confidenceCard(r.confidence, r.visitorId, [['Est. entropy', `~${r.estimatedEntropyBits} bits`], ['Duration', r.durationMs + ' ms']], 'Fingerprint confidence', 'Is the ID reproducible and not forged? (Advanced)', fixed(r.durationMs, 'getAdvanced(): total wall-clock time incl. Light and analysis')),
     card('Manipulation', `<div class="big ${a.manipulation.score >= 0.4 ? 'bad' : ''}">${pct(a.manipulation.score)} <small>${esc(a.manipulation.level)}</small></div>` + (a.manipulation.signals.length ? '<ul class="warn">' + a.manipulation.signals.map((s) => `<li>[${esc(s.category)}] ${esc(s.detail)} (${pct(s.weight)})</li>`).join('') + '</ul>' : '<p class="sub">Nothing suggests the fingerprint was altered.</p>')),
     card('Bot likelihood', `<div class="big ${a.bot.isBot ? 'bad' : ''}">${pct(a.bot.score)}</div>` + (a.bot.signals.length ? '<ul class="warn">' + a.bot.signals.map((s) => `<li>${esc(s.id)}: ${esc(s.detail)}</li>`).join('') + '</ul>' : '<p class="sub">No automation signals.</p>')),
     (a.tampering.length || a.inconsistencies.length || a.privacyTools.length) ? card('Tampering & privacy', '<ul>' + [...a.tampering.map((x) => `<li class="bad">patched: ${esc(x)}</li>`), ...a.inconsistencies.map((x) => `<li class="warn">${esc(x)}</li>`), ...a.privacyTools.map((p) => `<li>${esc(p.name)} (${pct(p.confidence)}): ${esc(p.evidence)}</li>`)].join('') + '</ul>') : '',
@@ -98,10 +188,32 @@ function advancedCards(r) {
     card('GPU', dl([['Renderer', c.webgl?.ok && c.webgl.value.unmaskedRenderer], ['Vendor', c.webgl?.ok && c.webgl.value.unmaskedVendor], ['WebGL2', c.webgl?.ok && c.webgl.value.webgl2]])),
     card('Network', dl([['Public IPs', c.webrtc?.ok && c.webrtc.value.publicIps?.join(', ')], ['Local IPs', c.webrtc?.ok && c.webrtc.value.localIps?.join(', ')], ['Type', c.connection?.ok && c.connection.value.effectiveType], ['RTT', c.connection?.ok && c.connection.value.rtt]])),
     card('Hardware', dl([['CPU', r.hardware.cpu.cores + ' cores ' + [r.hardware.cpu.architecture, r.hardware.cpu.bitness && r.hardware.cpu.bitness + '-bit'].filter(Boolean).join(' ')], ['RAM (capped)', r.hardware.memory.deviceMemoryGb && r.hardware.memory.deviceMemoryGb + ' GB'], ['GPU', r.hardware.gpu.renderer && (r.hardware.gpu.renderer + ' [' + r.hardware.gpu.class + ']')], ['WebGPU', r.hardware.gpu.webgpu ? [r.hardware.gpu.webgpu.vendor, r.hardware.gpu.webgpu.architecture].filter(Boolean).join(' ') || 'yes' : 'no'], ['Refresh rate', r.hardware.display.refreshRateHz && r.hardware.display.refreshRateHz + ' Hz'], ['Input', r.hardware.input.primaryPointer + ', ' + r.hardware.input.touchPoints + ' touch'], ['Audio out/in', r.hardware.audio.outputs + ' / ' + r.hardware.audio.inputs], ['Cameras', r.hardware.camera.count], ['Sensors', r.hardware.sensors.join(', ') || 'none'], ['USB/BT/HID/Serial', [r.hardware.connectivity.usb, r.hardware.connectivity.bluetooth, r.hardware.connectivity.hid, r.hardware.connectivity.serial].map((x) => x ? 'yes' : 'no').join(' / ')]])),
-    card('Browser specs', c.browserSpecs?.ok ? dl([['Cookies', c.browserSpecs.value.cookies.enabled + ' (writable: ' + c.browserSpecs.value.cookies.writable + ')'], ['Apple Pay', c.browserSpecs.value.applePay.available ? 'v' + c.browserSpecs.value.applePay.maxVersion : 'no'], ['WebAuthn', c.browserSpecs.value.webauthn.supported ? 'platform: ' + c.browserSpecs.value.webauthn.platformAuthenticator : 'no'], ['WASM', c.browserSpecs.value.webAssembly ? ['simd', 'threads', 'bulkMemory'].filter((k) => c.browserSpecs.value.webAssembly[k]).join(', ') || 'basic' : 'no'], ['HTTP', c.browserSpecs.value.context.httpProtocol], ['Secure ctx', c.browserSpecs.value.context.secureContext], ['Plugins', c.plugins?.ok && c.plugins.value.count + (c.plugins.value.onlyStandardPdfViewers ? ' (PDF viewers only)' : '')], ['Ad blocker', c.extensions?.ok && c.extensions.value.adBlocker], ['Extensions', c.extensions?.ok && (c.extensions.value.detected.join(', ') || 'none seen')]]) : ''),
+    specsCards(c),
     card('Battery', r.battery ? dl([['Level', pct(r.battery.level)], ['Charging', r.battery.charging ? 'yes' : 'no'], ['Time to full (s)', r.battery.chargingTime], ['Time to empty (s)', r.battery.dischargingTime]]) : '<p class="sub">Not available in this browser (Chromium only).</p>'),
     card('Fonts / voices', dl([['Fonts detected', c.fonts?.ok && c.fonts.value.count], ['Voices', c.speechVoices?.ok && c.speechVoices.value.count], ['Media inputs', c.mediaDevices?.ok && c.mediaDevices.value.videoinput != null ? `${c.mediaDevices.value.videoinput} cam / ${c.mediaDevices.value.audioinput} mic` : null]])),
-    card('Components (' + comp.length + ')', dl(comp)),
+    card('Canvas & audio', cv || au ? dl([
+      ['Canvas hash', cv && cv.supported !== false ? short(cv.hash) : 'unsupported'],
+      ['Canvas randomized', cv && (cv.randomized ? 'yes (noise injected)' : 'no')],
+      ['Audio hash', au && au.supported !== false ? short(au.hash) : 'unsupported'],
+      ['Audio sample sum', au && au.sum && au.sum.toFixed(6)],
+      ['Audio device', ac && ac.supported !== false ? ac.sampleRate + ' Hz, ' + ac.maxChannelCount + ' ch' : null],
+    ]) : ''),
+    card('System & engine', dl([
+      ['Platform', nv && nv.platform], ['Vendor', nv && nv.vendor],
+      ['Timezone', tz && tz.timeZone], ['Intl locale', tz && tz.locale],
+      ['JS engine', en && en.stackStyle + ', timer ' + en.timePrecisionMs + ' ms'],
+      ['Error style', en && en.errorMessage],
+      ['Web APIs present', ft && ft.apis.length], ['CSS features', ft && ft.css.length],
+      ['Display resolution', cs && cs.resolutionDppx && cs.resolutionDppx + ' dppx'],
+      ['Playable media types', cd && Object.values(cd.canPlayType).filter(Boolean).length + ' / ' + Object.keys(cd.canPlayType).length],
+    ])),
+    card('Storage & permissions', dl([
+      ['Storage quota', st && st.quota && Math.round(st.quota / 1048576) + ' MB'],
+      ['Private mode likely', st && yn2(st.privateModeLikely)],
+      ['IndexedDB', st && yn2(st.indexedDB)], ['Persistent storage', st && yn2(st.persisted)],
+      ['Permissions granted', pm && perm.filter((x) => x === 'granted').length], ['Permissions denied', pm && perm.filter((x) => x === 'denied').length],
+      ['Permissions to ask', pm && perm.filter((x) => x === 'prompt').length],
+    ])),
   ].join('');
 }
 
