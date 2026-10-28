@@ -18,19 +18,19 @@ export function gpuClass(renderer: string | null | undefined): GpuClass {
 
 const COMMON_HZ = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 170, 180, 240, 360];
 
-/** Median frame interval over ~30 rAF callbacks, snapped to the nearest common refresh rate. */
+/** Median frame interval over ~10 rAF callbacks, snapped to the nearest common refresh rate. */
 function measureRefreshRate(): Promise<number | null> {
   return new Promise((resolve) => {
     if (typeof requestAnimationFrame !== 'function' || document.visibilityState === 'hidden') return resolve(null);
     const deltas: number[] = [];
     let last = 0;
-    const timer = setTimeout(() => resolve(null), 1200);
+    const timer = setTimeout(() => resolve(null), 2000);
     const tick = (t: number) => {
       if (last) deltas.push(t - last);
       last = t;
-      if (deltas.length < 30) return requestAnimationFrame(tick);
+      if (deltas.length < 14) return requestAnimationFrame(tick);
       clearTimeout(timer);
-      const sorted = deltas.slice(5).sort((a, b) => a - b); // drop warm-up frames
+      const sorted = deltas.slice(4).sort((a, b) => a - b); // drop warm-up frames
       const hz = 1000 / sorted[Math.floor(sorted.length / 2)];
       resolve(COMMON_HZ.reduce((best, c) => (Math.abs(c - hz) < Math.abs(best - hz) ? c : best)));
     };
@@ -69,7 +69,19 @@ export const hardware: Collector = {
   bits: 5,
   timeoutMs: 6000, // first WebGPU adapter request can compile shaders
   async run() {
-    const [webgpu, refreshRateHz] = await Promise.all([webgpuInfo().catch(() => null), measureRefreshRate()]);
-    return { webgpu, refreshRateHz: refreshRateHz === null ? null : round(refreshRateHz, 0) };
+    return { webgpu: await webgpuInfo().catch(() => null) };
+  },
+};
+
+/** Not part of the visitorId: it changes with power saving, external monitors and window position. Runs alone, because frames starve while the page is busy. */
+export const refreshRate: Collector = {
+  id: 'refreshRate',
+  stable: false,
+  exclusive: true,
+  bits: 2,
+  timeoutMs: 3000,
+  async run() {
+    const hz = await measureRefreshRate();
+    return { hz: hz === null ? null : round(hz, 0) };
   },
 };

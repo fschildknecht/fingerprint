@@ -91,6 +91,9 @@ async function evalPage(wsUrl, expression, pre = '') {
   return JSON.parse(r.result.result.value);
 }
 
+const FULL = (opts = {}) =>
+  `FingerprintAdvanced.getAdvanced(${JSON.stringify(opts)}).then(r=>({ms:r.durationMs,pm:r.analysis.privateMode,manip:r.analysis.manipulation.score,failed:Object.entries(r.components).filter(([,v])=>!v.ok).map(([k,v])=>k+': '+v.error),id:r.visitorId,hashes:Object.fromEntries(Object.entries(r.components).filter(([,v])=>v.stable&&v.ok).map(([k,v])=>[k,v.hash])),conf:r.confidence.score,ids:Object.keys(r.components),slow:Object.entries(r.components).map(([k,v])=>k+'='+Math.round(v.ms)).sort((a,b)=>b.split('=')[1]-a.split('=')[1]).slice(0,4).join(' ')}))`;
+
 const ADV = (opts) =>
   `FingerprintAdvanced.getAdvanced(${JSON.stringify(opts)}).then(r=>({pm:r.analysis.privateMode,manip:r.analysis.manipulation,bot:r.analysis.bot}))`;
 
@@ -104,7 +107,7 @@ for (const exe of browsers) {
   console.log(`\n${exe}`);
   const port = 9300 + Math.floor(Math.random() * 500);
   const profile = join(tmpdir(), 'fp-test-' + port);
-  const proc = spawn(exe, [`--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
+  const proc = spawn(exe, [`--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--lang=en-US', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
   try {
     let version;
     for (let i = 0; i < 60 && !version; i++) {
@@ -135,6 +138,20 @@ for (const exe of browsers) {
     );
     check('spoofed navigator is flagged (>= 0.7)', spoof.manip.score >= 0.7, `score ${spoof.manip.score}`);
     check('spoof hits cross-context and tampering', ['cross-context', 'tampering'].every((c) => spoof.manip.categories[c]), JSON.stringify(spoof.manip.categories));
+
+    // Stability under full load: every collector runs, the verdicts must not depend on contention.
+    const fullN = [await evalPage(normal.webSocketDebuggerUrl, FULL()), await evalPage(normal.webSocketDebuggerUrl, FULL())];
+    const fullO = [await evalPage(otr.webSocketDebuggerUrl, FULL()), await evalPage(otr.webSocketDebuggerUrl, FULL())];
+    check('full run: no collector fails', [...fullN, ...fullO].every((r) => !r.failed.length), JSON.stringify([...fullN, ...fullO].map((r) => r.failed)));
+    check('full run: normal stays non-private', fullN.every((r) => r.pm.isPrivate === false), JSON.stringify(fullN.map((r) => r.pm)));
+    check('full run: incognito stays private', fullO.every((r) => r.pm.isPrivate === true), JSON.stringify(fullO.map((r) => r.pm)));
+    check('full run: visitorId is reproducible', fullN[0].id === fullN[1].id, 'differs in: ' + Object.keys(fullN[0].hashes).filter((k) => fullN[0].hashes[k] !== fullN[1].hashes[k]).join(', '));
+    check('full run: finishes within 8 s', fullN.every((r) => r.ms < 8000), JSON.stringify(fullN.map((r) => [r.ms, r.slow])));
+
+    const fast = await evalPage(normal.webSocketDebuggerUrl, FULL({ fast: true }));
+    check('fast mode skips the slow collectors', !['webrtc', 'audioContext', 'drm', 'adBlocker'].some((id) => fast.ids.includes(id)), fast.ids.join());
+    check('fast mode is clearly faster', fast.ms < fullN[0].ms * 0.6, `${fast.ms} vs ${fullN[0].ms}`);
+    check('fast mode keeps privacy verdict', fast.pm.isPrivate === false, JSON.stringify(fast.pm));
     browser.close();
   } catch (e) {
     check('browser run', false, String(e));

@@ -48,6 +48,7 @@ export const audio: Collector = {
 export const audioContext: Collector = {
   id: 'audioContext',
   stable: true,
+  slow: true,
   bits: 2,
   async run() {
     const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;

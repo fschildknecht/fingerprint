@@ -170,7 +170,7 @@ function advancedCards(r) {
   const val = (id) => (c[id] && c[id].ok ? c[id].value : null);
   const analysisMs = fixed(r.analysisMs, 'bot, tamper and manipulation checks (incl. iframe and worker comparison)');
   const IDS = {
-    'GPU': ['webgl'], 'Network': ['webrtc', 'connection'], 'Hardware': ['hardware', 'sensors'], 'Battery': ['battery'],
+    'GPU': ['webgl'], 'Network': ['webrtc', 'connection'], 'Hardware': ['hardware', 'refreshRate', 'sensors'], 'Battery': ['battery'],
     'Fonts / voices': ['fonts', 'speechVoices', 'mediaDevices'], 'Canvas & audio': ['canvas', 'audio', 'audioContext'],
     'System & engine': ['navigator', 'timezone', 'intl', 'math', 'css', 'features', 'engine', 'codecs'],
     'Storage & permissions': ['storage', 'permissions'], 'Private mode & Tor': ['privateMode'],

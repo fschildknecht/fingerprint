@@ -55,9 +55,11 @@ async function cosmeticProbe(): Promise<{ blocked: boolean; hidden: number; tota
   document.body.appendChild(box);
   try {
     let hidden = 0;
-    for (let i = 0; i < 10; i++) {
+    // Bound by the clock, not by a loop count: a background tab throttles setTimeout to ~1 Hz.
+    const deadline = performance.now() + 500;
+    for (;;) {
       hidden = baits.filter(isHidden).length;
-      if (hidden > 0) break;
+      if (hidden > 0 || performance.now() >= deadline) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     return { blocked: hidden > 0, hidden, total: baits.length };
@@ -99,6 +101,7 @@ async function networkProbe(): Promise<boolean | null> {
 export const adBlocker: Collector = {
   id: 'adBlocker',
   stable: false,
+  slow: true,
   bits: 2,
   timeoutMs: 5000,
   async run() {

@@ -6,7 +6,7 @@ Open-source browser fingerprinting in TypeScript, in two flavours:
 |---|---|---|
 | Goal | *What is this?* Device, browser, screen, with a confidence score | *Everything a browser will tell us*, plus bot / tamper / privacy-tool detection |
 | Size (min) | ~15 KB (~5 KB gzip) | ~45 KB |
-| Time | ~20 ms | ~1.5 s |
+| Time | ~20 ms | 4-5 s first call, ~0.8 s repeat, ~1.5-2 s with `fast: true` (see [Performance](#performance-and-stability)) |
 | Prompts / network | none | none by default; WebRTC contacts a public STUN server (opt out with `exclude`) |
 | ID | coarse `visitorId` (groups similar devices) | high-entropy `visitorId` (~25 bits estimated) |
 
@@ -70,6 +70,21 @@ Opt-in collectors (`include: ['localFonts']`) are the ones that can trigger brow
 
 The ad-blocker network probe requests `static.doubleclick.net/instream/ad_status.js` (it is only reachable when no blocker is active). Use `exclude: ['adBlocker']` if you don't want that request.
 
+## Performance and stability
+
+```ts
+await getAdvanced({ fast: true });   // skips WebRTC, AudioContext, DRM and the ad-blocker probe
+```
+
+Measured in headless Chrome 155 on a laptop: the first call takes 4-5 s, repeat calls ~0.8 s, `fast: true` ~1.5-2 s cold and ~0.5 s warm. The cold cost is almost entirely Chrome initialising subsystems on first use, and it happens **synchronously on the main thread**: the first `new RTCPeerConnection()` blocks for ~1.2 s, the first `new AudioContext()` ~0.5 s. That cannot be avoided from JavaScript, only skipped (`fast`, or `exclude: ['webrtc']`). `fast` changes the `visitorId` because fewer signals are mixed in.
+
+What the library does to stay predictable:
+
+- **Scheduling**: collectors yield to the browser between each other so the page can paint; long I/O-bound ones (DRM, WebRTC, network) start first and overlap with CPU-bound ones; timing-sensitive ones (`privateMode`, `refreshRate`) run last, alone, so sibling load cannot skew them.
+- **Timeouts ignore main-thread stalls**: a sibling freezing the page for 2 s does not use up another collector's budget. The credit is capped at the original budget, and hidden tabs (whose timers the browser throttles) get none.
+- **Wall-clock, not loop counts**: polling loops are bounded by time, because background tabs throttle `setTimeout` to ~1 Hz.
+- **Stable signals only in the `visitorId`**: late-arriving network voices, refresh rate and other things that change between loads are reported but not hashed. `npm run test:browser` loads the page repeatedly and fails if the `visitorId` changes.
+
 ## The confidence score
 
 ```
@@ -119,7 +134,7 @@ Tested against a page that overrides `navigator.platform`, `hardwareConcurrency`
 ```
 packages/core       types, UA parser, client hints, device classifier, screen, confidence, hashing
 packages/light      getLight()
-packages/advanced   getAdvanced(), 27 collectors, bot / tamper analysis
+packages/advanced   getAdvanced(), 28 collectors, bot / tamper analysis
 examples/           demo page + tiny static server
 tests/              vitest
 ```

@@ -192,6 +192,7 @@ async function safariTest(n: any): Promise<PrivateModeResult> {
 export const privateMode: Collector = {
   id: 'privateMode',
   stable: false,
+  exclusive: true,
   bits: 1,
   timeoutMs: 5000,
   async run(): Promise<PrivateModeResult> {
@@ -204,7 +205,18 @@ export const privateMode: Collector = {
         return { isPrivate: null, confidence: 0, browser, method: 'idb-durability', detail: { reason: 'durability hint ignored or IndexedDB unavailable' } };
       }
       const { isPrivate, median, confidence } = classifyDurability(test.ratios);
-      return { isPrivate, confidence, browser, method: 'idb-durability', detail: { medianRatio: median, rounds: test.ratios.length, threshold: 1.3 } };
+      const detail = { medianRatio: median, rounds: test.ratios.length, threshold: 1.3 };
+      if (isPrivate) {
+        // A fast disk or a momentary lull can make one normal-profile run look in-memory. Real
+        // incognito is consistent, so a "private" verdict must survive a second, independent run.
+        const again = await chromiumDurabilityTest().catch(() => null);
+        const second = again ? classifyDurability(again.ratios) : null;
+        if (!second?.isPrivate) {
+          return { isPrivate: null, confidence: 0, browser, method: 'idb-durability', detail: { ...detail, secondMedianRatio: second?.median ?? null, reason: 'confirmation run disagreed' } };
+        }
+        return { isPrivate, confidence, browser, method: 'idb-durability', detail: { ...detail, secondMedianRatio: second.median } };
+      }
+      return { isPrivate, confidence, browser, method: 'idb-durability', detail };
     }
     if (browser === 'firefox') return firefoxTest(n);
     if (browser === 'safari') return safariTest(n);

@@ -10,7 +10,7 @@ import { drm } from './drm';
 import { adBlocker } from './adblock';
 import { privateMode } from '../privacy';
 import { sensors, battery, permissions, storage } from './device';
-import { hardware } from './hardware';
+import { hardware, refreshRate } from './hardware';
 import { plugins, browserSpecs, extensions } from './specs';
 
 export const COLLECTORS: Collector[] = [
@@ -18,6 +18,7 @@ export const COLLECTORS: Collector[] = [
   plugins,
   browserSpecs,
   hardware,
+  refreshRate,
   timezone,
   intl,
   math,

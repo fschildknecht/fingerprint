@@ -43,7 +43,8 @@ export const codecs: Collector = {
         ...Object.fromEntries(AUDIO.map((t) => [t, a.canPlayType(t)])),
       },
       mediaSource: MS ? [...VIDEO, ...AUDIO].filter((t) => MS.isTypeSupported?.(t)) : null,
-      mediaRecorder: MR ? [...VIDEO, ...AUDIO].filter((t) => MR.isTypeSupported?.(t)) : null,
+      // Skip HEVC: the first MediaRecorder HEVC query boots an encoder and blocks the main thread for ~1.4 s.
+      mediaRecorder: MR ? [...VIDEO, ...AUDIO].filter((t) => !/hev1|hvc1/.test(t) && MR.isTypeSupported?.(t)) : null,
     };
   },
 };
@@ -77,20 +78,30 @@ export const speechVoices: Collector = {
   async run() {
     const s = (window as any).speechSynthesis;
     if (!s) return { supported: false };
-    let voices: SpeechSynthesisVoice[] = s.getVoices();
-    if (!voices.length) {
-      voices = await new Promise<SpeechSynthesisVoice[]>((resolve) => {
-        const t = setTimeout(() => resolve(s.getVoices()), 1000);
-        s.addEventListener?.('voiceschanged', () => {
-          clearTimeout(t);
-          resolve(s.getVoices());
-        });
-      });
-    }
+    // Voices arrive in batches (Chrome adds its network voices a moment after the local ones), so
+    // wait until the list has stopped changing before reading it.
+    const settled = await new Promise<SpeechSynthesisVoice[]>((resolve) => {
+      let timer: ReturnType<typeof setTimeout>;
+      const done = () => {
+        s.removeEventListener?.('voiceschanged', onChange);
+        resolve(s.getVoices());
+      };
+      const onChange = () => {
+        clearTimeout(timer);
+        timer = setTimeout(done, 250);
+      };
+      s.addEventListener?.('voiceschanged', onChange);
+      timer = setTimeout(done, s.getVoices().length ? 250 : 1000);
+    });
+    // Only on-device voices go into the signal; network voices depend on connectivity and account.
+    const local = settled.filter((v) => v.localService !== false);
     return {
       supported: true,
-      count: voices.length,
-      voices: voices.slice(0, 150).map((v) => ({ name: v.name, lang: v.lang, local: v.localService, default: v.default })),
+      count: local.length,
+      voices: local
+        .slice(0, 150)
+        .map((v) => ({ name: v.name, lang: v.lang, default: v.default }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.lang.localeCompare(b.lang)),
     };
   },
 };

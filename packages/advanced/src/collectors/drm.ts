@@ -34,12 +34,9 @@ async function hdcp(a: MediaKeySystemAccess): Promise<string | null> {
   try {
     const keys: any = await withTimeout(a.createMediaKeys(), 1500);
     if (typeof keys.getStatusForPolicy !== 'function') return null;
-    let best: string | null = null;
-    for (const v of ['1.0', '1.1', '1.2', '1.3', '1.4', '2.0', '2.1', '2.2', '2.3']) {
-      const status = await withTimeout<string>(keys.getStatusForPolicy({ minHdcpVersion: v }), 1000).catch(() => null);
-      if (status === 'usable') best = v;
-    }
-    return best;
+    const versions = ['1.0', '1.1', '1.2', '1.3', '1.4', '2.0', '2.1', '2.2', '2.3'];
+    const status = await Promise.all(versions.map((v) => withTimeout<string>(keys.getStatusForPolicy({ minHdcpVersion: v }), 1000).catch(() => null)));
+    return versions.filter((_, i) => status[i] === 'usable').pop() ?? null;
   } catch {
     return null;
   }
@@ -93,6 +90,7 @@ async function fairplay() {
 export const drm: Collector = {
   id: 'drm',
   stable: true,
+  slow: true,
   bits: 3,
   timeoutMs: 12000,
   async run() {

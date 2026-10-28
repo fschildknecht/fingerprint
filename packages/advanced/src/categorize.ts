@@ -68,7 +68,7 @@ export function buildHardware(light: LightResult, c: V): HardwareProfile {
       colorDepth: s.colorDepth,
       colorGamut: s.colorGamut,
       hdr: s.hdr,
-      refreshRateHz: c.hardware?.refreshRateHz ?? null,
+      refreshRateHz: c.refreshRate?.hz ?? null,
       multiMonitor: s.isExtended,
       estimatedDiagonalInches: s.estimatedDiagonalInches.value,
     },

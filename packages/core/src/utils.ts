@@ -20,16 +20,62 @@ export function mq(query: string): boolean | null {
   }
 }
 
+// Collectors run side by side and some freeze the main thread for a second or more (the first
+// RTCPeerConnection, AudioContext...). That time must not count against a sibling's timeout, so a
+// ticker measures how long the loop was blocked and timeouts are extended by exactly that.
+let blockedMs = 0;
+let watchers = 0;
+let ticker: ReturnType<typeof setInterval> | undefined;
+let lastTick = 0;
+const TICK_MS = 25;
+
+function watchBlocking(): () => void {
+  if (watchers++ === 0) {
+    lastTick = now();
+    ticker = setInterval(() => {
+      const t = now();
+      const late = t - lastTick - TICK_MS;
+      // A hidden tab has its timers throttled by the browser; that is not blocking by a sibling.
+      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      if (late > TICK_MS && !hidden) blockedMs += late;
+      lastTick = t;
+    }, TICK_MS);
+  }
+  return () => {
+    if (--watchers === 0) clearInterval(ticker);
+  };
+}
+
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'timeout'): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(label)), ms);
+    const unwatch = watchBlocking();
+    const baseline = blockedMs;
+    let credited = 0;
+    let t: ReturnType<typeof setTimeout>;
+    const arm = (wait: number) => {
+      t = setTimeout(() => {
+        // The ticker may not have run yet if the block only just ended; check once more on the next turn.
+        // Credit is capped at the original budget, so a misjudged stall can at most double the wait.
+        const extra = Math.min(blockedMs - baseline - credited, ms - credited);
+        if (extra > 0) {
+          credited += extra;
+          arm(extra);
+        } else {
+          unwatch();
+          reject(new Error(label));
+        }
+      }, wait);
+    };
+    arm(ms);
     promise.then(
       (v) => {
         clearTimeout(t);
+        unwatch();
         resolve(v);
       },
       (e) => {
         clearTimeout(t);
+        unwatch();
         reject(e);
       },
     );

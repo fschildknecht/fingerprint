@@ -49,6 +49,7 @@ function classify(address: string): Candidate['kind'] {
 export const webrtc: Collector = {
   id: 'webrtc',
   stable: false,
+  slow: true,
   bits: 3,
   timeoutMs: 4000,
   async run() {

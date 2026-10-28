@@ -24,6 +24,11 @@ export interface AdvancedOptions extends LightOptions {
   exclude?: string[];
   /** Per-collector timeout override in ms. */
   timeoutMs?: number;
+  /**
+   * Skip the collectors that cost 0.5 s or more (WebRTC, AudioContext, DRM, ad-blocker probe).
+   * Roughly 3 s -> 1 s. The visitorId changes because fewer stable signals are mixed in.
+   */
+  fast?: boolean;
 }
 
 export type ComponentResult =
@@ -53,22 +58,40 @@ export interface AdvancedResult {
   durationMs: number;
 }
 
+/** A macrotask without setTimeout's 4 ms clamp. Falls back to setTimeout where MessageChannel is missing. */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof MessageChannel === 'undefined') return void setTimeout(resolve, 0);
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => {
+      ch.port1.close();
+      resolve();
+    };
+    ch.port2.postMessage(0);
+  });
+}
+
 export async function getAdvanced(options: AdvancedOptions = {}): Promise<AdvancedResult> {
   const start = now();
   const light = await getLight(options);
 
   const selected = COLLECTORS.filter((c) => {
     if (options.exclude?.includes(c.id)) return false;
+    if (options.fast && c.slow && !options.include?.includes(c.id)) return false;
     if (options.include) return options.include.includes(c.id);
     return !c.optIn;
   });
 
-  const runs = await Promise.all(
-    selected.map(async (c) => {
-      const r = await safe(c.run, options.timeoutMs ?? c.timeoutMs ?? 3000);
-      return [c, r] as const;
-    }),
-  );
+  const exec = async (c: (typeof selected)[number]) => {
+    await yieldToMain(); // lets the page paint and handle input between collectors
+    return [c, await safe(c.run, options.timeoutMs ?? c.timeoutMs ?? 3000)] as const;
+  };
+  // Collectors start in the order given. Long ones wait on the browser (DRM, WebRTC, network), so
+  // start them first and let them overlap with the CPU-bound ones. Timing-sensitive collectors run
+  // last and alone, otherwise sibling load skews their measurement.
+  const concurrent = selected.filter((c) => !c.exclusive).sort((a, b) => (b.timeoutMs ?? 3000) - (a.timeoutMs ?? 3000));
+  const runs = await Promise.all(concurrent.map(exec));
+  runs.push(...(await Promise.all(selected.filter((c) => c.exclusive).map(exec))));
 
   const components: Record<string, ComponentResult> = {};
   const values: Record<string, any> = {};
@@ -96,7 +119,7 @@ export async function getAdvanced(options: AdvancedOptions = {}): Promise<Advanc
   // --- Confidence ---
   const cb = new ConfidenceBuilder();
   const supported = (id: string) => !!values[id] && values[id].supported !== false;
-  for (const c of COLLECTORS.filter((x) => x.stable && !x.optIn)) {
+  for (const c of selected.filter((x) => x.stable)) {
     cb.factor(c.id, c.bits, !!components[c.id]?.ok && supported(c.id), `~${c.bits} bits`);
   }
   cb.factor('light', 6, light.confidence.score >= 0.5, `light confidence ${light.confidence.score}`);
