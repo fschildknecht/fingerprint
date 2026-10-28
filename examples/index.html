@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fingerprint demo</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#14171a; --mut:#6b7280; --card:#f4f5f7; --line:#e2e4e8; --ok:#15803d; --mid:#b45309; --bad:#b91c1c; --acc:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --fg:#e8eaed; --mut:#9aa0a6; --card:#181b21; --line:#2a2e36; --ok:#4ade80; --mid:#fbbf24; --bad:#f87171; --acc:#60a5fa; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p.sub { color: var(--mut); margin: 0 0 20px; }
+  .tabs { display:flex; gap:8px; margin-bottom:16px; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .card h2 { font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:0 0 8px; }
+  .big { font-size:1.6rem; font-weight:650; }
+  dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:2px 12px; }
+  dt { color:var(--mut); } dd { margin:0; word-break:break-word; text-align:right; }
+  .bar { height:8px; border-radius:4px; background:var(--line); overflow:hidden; margin:8px 0; }
+  .bar > i { display:block; height:100%; background:var(--ok); }
+  .warn { color:var(--mid); } .bad { color:var(--bad); }
+  ul { margin:6px 0 0; padding-left:18px; } li { margin:2px 0; }
+  details { margin-top:16px; } summary { cursor:pointer; color:var(--mut); }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; max-height:480px; font-size:12px; }
+  code { font-family: ui-monospace,Consolas,monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>fingerprint</h1>
+  <p class="sub">Open-source browser fingerprinting. Everything runs locally in your browser; nothing is sent anywhere except the optional WebRTC STUN probe in Advanced.</p>
+  <div class="tabs">
+    <button id="t-light" aria-pressed="true">Light</button>
+    <button id="t-adv" aria-pressed="false">Advanced</button>
+  </div>
+  <div id="out" class="grid" aria-live="polite">Collecting…</div>
+  <details><summary>Raw JSON</summary><pre id="raw"></pre></details>
+</main>
+
+<script src="../packages/light/dist/index.global.js"></script>
+<script src="../packages/advanced/dist/index.global.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '–').replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const pct = (n) => Math.round(n * 100) + '%';
+const dl = (rows) => '<dl>' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
+const card = (title, body) => `<div class="card"><h2>${esc(title)}</h2>${body}</div>`;
+
+function confidenceCard(conf, id, extra = [], title = 'Confidence', hint = '') {
+  const color = conf.score < 0.4 ? 'var(--bad)' : conf.score < 0.7 ? 'var(--mid)' : 'var(--ok)';
+  const pens = conf.penalties.length ? '<ul class="warn">' + conf.penalties.map((p) => `<li>${esc(p.note)} (−${pct(p.amount)})</li>`).join('') + '</ul>' : '';
+  return card(title, `${hint ? '<p class="sub" style="margin:0 0 6px;font-size:.8rem">' + hint + '</p>' : ''}<div class="big">${pct(conf.score)} <small>${esc(conf.level)}</small></div>
+    <div class="bar"><i style="width:${pct(conf.score)};background:${color}"></i></div>
+    ${dl([['Visitor ID', id], ...extra])}${pens}`);
+}
+
+function lightCards(r, title, hint) {
+  const s = r.screen;
+  return [
+    confidenceCard(r.confidence, r.visitorId, [], title, hint),
+    card('Device', dl([
+      ['Type', `${r.device.type} (${pct(r.device.typeConfidence)})`],
+      ['Vendor / model', [r.device.vendor, r.device.model].filter(Boolean).join(' ') || null],
+      ['OS', [r.device.os.name, r.device.os.version, r.device.os.marketingName].filter(Boolean).join(' ')],
+      ['CPU cores', r.device.cpuCores], ['Memory (GB, capped)', r.device.memoryGb],
+      ['Touch points', r.device.touch.maxTouchPoints],
+    ]) + (r.reasons.length ? '<ul>' + r.reasons.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>' : '')),
+    card('Browser', dl([
+      ['Name', r.browser.name], ['Version', r.browser.version], ['Engine', `${r.browser.engine} ${r.browser.engineVersion ?? ''}`],
+      ['WebView', r.browser.isWebView], ['Brave', r.browser.isBrave],
+    ])),
+    card('Screen', dl([
+      ['CSS size', `${s.width} × ${s.height}`], ['Physical', `${s.physicalWidth} × ${s.physicalHeight}`],
+      ['Pixel ratio', s.devicePixelRatio], ['Orientation', s.orientation],
+      ['Viewport', `${s.viewport.innerWidth} × ${s.viewport.innerHeight}`],
+      ['Est. diagonal', s.estimatedDiagonalInches.value != null ? `~${s.estimatedDiagonalInches.value}″ (${pct(s.estimatedDiagonalInches.confidence)})` : null],
+      ['Colour', `${s.colorDepth}-bit, ${s.colorGamut ?? '?'}${s.hdr ? ', HDR' : ''}`], ['Multi-monitor', s.isExtended], ['Size class', s.sizeClass],
+    ])),
+    card('Locale', dl([['Language', r.locale.languages.join(', ')], ['Timezone', r.locale.timezone], ['Offset (min)', r.locale.timezoneOffsetMinutes]])),
+    r.inconsistencies.length ? card('Inconsistencies', '<ul class="warn">' + r.inconsistencies.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>') : '',
+  ].join('');
+}
+
+function advancedCards(r) {
+  const a = r.analysis, c = r.components;
+  const comp = Object.entries(c).map(([k, v]) => [k, v.ok ? `${v.hash} · ${v.ms}ms${v.stable ? '' : ' · volatile'}` : `✗ ${v.error}`]);
+  return [
+    confidenceCard(r.confidence, r.visitorId, [['Est. entropy', `~${r.estimatedEntropyBits} bits`], ['Duration', r.durationMs + ' ms']], 'Fingerprint confidence', 'Is the ID reproducible and not forged? (Advanced)'),
+    card('Manipulation', `<div class="big ${a.manipulation.score >= 0.4 ? 'bad' : ''}">${pct(a.manipulation.score)} <small>${esc(a.manipulation.level)}</small></div>` + (a.manipulation.signals.length ? '<ul class="warn">' + a.manipulation.signals.map((s) => `<li>[${esc(s.category)}] ${esc(s.detail)} (${pct(s.weight)})</li>`).join('') + '</ul>' : '<p class="sub">Nothing suggests the fingerprint was altered.</p>')),
+    card('Bot likelihood', `<div class="big ${a.bot.isBot ? 'bad' : ''}">${pct(a.bot.score)}</div>` + (a.bot.signals.length ? '<ul class="warn">' + a.bot.signals.map((s) => `<li>${esc(s.id)}: ${esc(s.detail)}</li>`).join('') + '</ul>' : '<p class="sub">No automation signals.</p>')),
+    (a.tampering.length || a.inconsistencies.length || a.privacyTools.length) ? card('Tampering & privacy', '<ul>' + [...a.tampering.map((x) => `<li class="bad">patched: ${esc(x)}</li>`), ...a.inconsistencies.map((x) => `<li class="warn">${esc(x)}</li>`), ...a.privacyTools.map((p) => `<li>${esc(p.name)} (${pct(p.confidence)}): ${esc(p.evidence)}</li>`)].join('') + '</ul>') : '',
+    lightCards(r.light, 'Identification confidence', 'Did we classify device and browser correctly? (Light)'),
+    card('GPU', dl([['Renderer', c.webgl?.ok && c.webgl.value.unmaskedRenderer], ['Vendor', c.webgl?.ok && c.webgl.value.unmaskedVendor], ['WebGL2', c.webgl?.ok && c.webgl.value.webgl2]])),
+    card('Network', dl([['Public IPs', c.webrtc?.ok && c.webrtc.value.publicIps?.join(', ')], ['Local IPs', c.webrtc?.ok && c.webrtc.value.localIps?.join(', ')], ['Type', c.connection?.ok && c.connection.value.effectiveType], ['RTT', c.connection?.ok && c.connection.value.rtt]])),
+    card('Hardware', dl([['CPU', r.hardware.cpu.cores + ' cores ' + [r.hardware.cpu.architecture, r.hardware.cpu.bitness && r.hardware.cpu.bitness + '-bit'].filter(Boolean).join(' ')], ['RAM (capped)', r.hardware.memory.deviceMemoryGb && r.hardware.memory.deviceMemoryGb + ' GB'], ['GPU', r.hardware.gpu.renderer && (r.hardware.gpu.renderer + ' [' + r.hardware.gpu.class + ']')], ['WebGPU', r.hardware.gpu.webgpu ? [r.hardware.gpu.webgpu.vendor, r.hardware.gpu.webgpu.architecture].filter(Boolean).join(' ') || 'yes' : 'no'], ['Refresh rate', r.hardware.display.refreshRateHz && r.hardware.display.refreshRateHz + ' Hz'], ['Input', r.hardware.input.primaryPointer + ', ' + r.hardware.input.touchPoints + ' touch'], ['Audio out/in', r.hardware.audio.outputs + ' / ' + r.hardware.audio.inputs], ['Cameras', r.hardware.camera.count], ['Sensors', r.hardware.sensors.join(', ') || 'none'], ['USB/BT/HID/Serial', [r.hardware.connectivity.usb, r.hardware.connectivity.bluetooth, r.hardware.connectivity.hid, r.hardware.connectivity.serial].map((x) => x ? 'yes' : 'no').join(' / ')]])),
+    card('Browser specs', c.browserSpecs?.ok ? dl([['Cookies', c.browserSpecs.value.cookies.enabled + ' (writable: ' + c.browserSpecs.value.cookies.writable + ')'], ['Apple Pay', c.browserSpecs.value.applePay.available ? 'v' + c.browserSpecs.value.applePay.maxVersion : 'no'], ['WebAuthn', c.browserSpecs.value.webauthn.supported ? 'platform: ' + c.browserSpecs.value.webauthn.platformAuthenticator : 'no'], ['WASM', c.browserSpecs.value.webAssembly ? ['simd', 'threads', 'bulkMemory'].filter((k) => c.browserSpecs.value.webAssembly[k]).join(', ') || 'basic' : 'no'], ['HTTP', c.browserSpecs.value.context.httpProtocol], ['Secure ctx', c.browserSpecs.value.context.secureContext], ['Plugins', c.plugins?.ok && c.plugins.value.count + (c.plugins.value.onlyStandardPdfViewers ? ' (PDF viewers only)' : '')], ['Ad blocker', c.extensions?.ok && c.extensions.value.adBlocker], ['Extensions', c.extensions?.ok && (c.extensions.value.detected.join(', ') || 'none seen')]]) : ''),
+    card('Battery', r.battery ? dl([['Level', pct(r.battery.level)], ['Charging', r.battery.charging ? 'yes' : 'no'], ['Time to full (s)', r.battery.chargingTime], ['Time to empty (s)', r.battery.dischargingTime]]) : '<p class="sub">Not available in this browser (Chromium only).</p>'),
+    card('Fonts / voices', dl([['Fonts detected', c.fonts?.ok && c.fonts.value.count], ['Voices', c.speechVoices?.ok && c.speechVoices.value.count], ['Media inputs', c.mediaDevices?.ok && c.mediaDevices.value.videoinput != null ? `${c.mediaDevices.value.videoinput} cam / ${c.mediaDevices.value.audioinput} mic` : null]])),
+    card('Components (' + comp.length + ')', dl(comp)),
+  ].join('');
+}
+
+let mode = 'light';
+const cache = {};
+async function render() {
+  $('t-light').setAttribute('aria-pressed', mode === 'light');
+  $('t-adv').setAttribute('aria-pressed', mode === 'advanced');
+  $('out').innerHTML = 'Collecting…';
+  try {
+    cache[mode] ??= mode === 'light' ? await FingerprintLight.getLight() : await FingerprintAdvanced.getAdvanced();
+    const r = cache[mode];
+    window.__result = r;
+    $('out').innerHTML = mode === 'light' ? lightCards(r, 'Identification confidence', 'Did we classify device and browser correctly?') : advancedCards(r);
+    $('raw').textContent = JSON.stringify(r, null, 2);
+    document.body.dataset.ready = mode;
+  } catch (e) {
+    $('out').textContent = 'Error: ' + e.message;
+    document.body.dataset.error = e.message;
+  }
+}
+$('t-light').onclick = () => { mode = 'light'; render(); };
+$('t-adv').onclick = () => { mode = 'advanced'; render(); };
+mode = new URLSearchParams(location.search).get('mode') === 'advanced' ? 'advanced' : 'light';
+render();
+</script>
+</body>
+</html>

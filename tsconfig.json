@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@fingerprint/core": ["packages/core/src/index.ts"],
+      "@fingerprint/light": ["packages/light/src/index.ts"],
+      "@fingerprint/advanced": ["packages/advanced/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src", "tests"]
+}
