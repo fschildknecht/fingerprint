@@ -48,12 +48,15 @@ async function widevine() {
     ['L2', 'HW_SECURE_CRYPTO'],
     ['L3', 'SW_SECURE_CRYPTO'],
   ];
-  // The first call loads the CDM, which can take seconds. Warm it up before the quick level probes.
-  const any = await access('com.widevine.alpha', ['cenc'], undefined, 6000);
-  if (!any) return { available: false };
-  const results = await Promise.all(levels.map(([, r]) => access('com.widevine.alpha', ['cenc'], r)));
+  // The first call loads the CDM, which can take seconds. Fire every probe at once: they queue
+  // behind the CDM load together instead of paying for a serial warm-up plus three more round-trips.
+  const [any, ...results] = await Promise.all([
+    access('com.widevine.alpha', ['cenc'], undefined, 6000),
+    ...levels.map(([, r]) => access('com.widevine.alpha', ['cenc'], r, 6000)),
+  ]);
+  if (!any && !results.some(Boolean)) return { available: false };
   const idx = results.findIndex(Boolean);
-  if (idx === -1) return { available: true, securityLevel: 'unknown', hdcp: await hdcp(any) };
+  if (idx === -1) return { available: true, securityLevel: 'unknown', hdcp: await hdcp(any!) };
   return { available: true, securityLevel: levels[idx][0], hdcp: await hdcp(results[idx]!) };
 }
 
@@ -75,10 +78,11 @@ async function playready() {
 }
 
 async function fairplay() {
-  for (const id of ['com.apple.fps', 'com.apple.fps.1_0', 'com.apple.fps.2_0', 'com.apple.fps.3_0']) {
-    if (await access(id, ['sinf', 'skd', 'cenc'])) return { available: true, keySystem: id };
-  }
-  return { available: false };
+  // Only Safari knows these key systems; elsewhere every probe rejects at once, so run them together.
+  const ids = ['com.apple.fps', 'com.apple.fps.1_0', 'com.apple.fps.2_0', 'com.apple.fps.3_0'];
+  const found = await Promise.all(ids.map((id) => access(id, ['sinf', 'skd', 'cenc'])));
+  const i = found.findIndex(Boolean);
+  return i === -1 ? { available: false } : { available: true, keySystem: ids[i] };
 }
 
 /**
