@@ -43,7 +43,9 @@ export const fonts: Collector = {
 
     const measure = (family: string) => {
       span.style.fontFamily = family;
-      return [span.offsetWidth, span.offsetHeight];
+      // Fractional box size: offsetWidth rounds to whole pixels and hides fonts with near-identical metrics.
+      const r = span.getBoundingClientRect();
+      return [r.width, r.height];
     };
 
     try {

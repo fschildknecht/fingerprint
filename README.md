@@ -61,6 +61,7 @@ Via script tag: `FingerprintLight.getLight()` / `FingerprintAdvanced.getAdvanced
 | Network | WebRTC ICE (public/local IP, mDNS, codecs), Network Information API |
 | Media | codec support matrix, speech voices, camera/mic counts, DRM (opt-in) |
 | Hardware | `fp.hardware` regrouped into cpu / memory / gpu (class + WebGPU adapter) / display (refresh rate) / input / audio / camera / sensors / connectivity, plus `fp.battery`, permissions state, storage quota / private-mode hint |
+| Ecosystem | wallets (Apple / Google / Samsung Pay via Payment Request), hardware codec decode and HDR (MediaCapabilities, WebCodecs), keyboard layout, Bluetooth / VR adapters, newest drawable emoji (`fp.hardware.ecosystem`, `gpu.hardwareDecode`) |
 | Browser specs | cookies (enabled + writable), Apple Pay version, Payment Request, WebAuthn, WebAssembly (SIMD/threads), JS syntax support, HTTP version, secure/isolated context |
 | Plugins & blockers | plugin list with MIME types; **ad-blocker detection** with two independent methods (hidden bait elements + blocked ad request, each reported separately); DOM/global hints for extensions (Dark Reader, Grammarly, wallets, DevTools). No `chrome-extension://` probing |
 | DRM | **Widevine** (L1/L2/L3, HDCP version), **PlayReady** (SL3000/SL2000, Edge/Windows), **FairPlay**, ClearKey. Tells you whether HD/4K streaming is possible. Skipped in Firefox (probing can trigger an install prompt) |

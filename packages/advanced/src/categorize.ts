@@ -10,6 +10,9 @@ export interface HardwareProfile {
     vendor: string | null;
     renderer: string | null;
     class: GpuClass;
+    /** Codecs the GPU decodes in hardware (from MediaCapabilities), e.g. h264, hevc, av1. */
+    hardwareDecode: string[] | null;
+    hdrPlayback: string[] | null;
     webgl2: boolean | null;
     webgpu: { vendor: string | null; architecture: string | null; description: string | null; isFallback: boolean | null } | null;
   };
@@ -30,6 +33,8 @@ export interface HardwareProfile {
   sensors: string[];
   connectivity: { bluetooth: boolean; usb: boolean; hid: boolean; serial: boolean; nfc: boolean; effectiveType: string | null; downlinkMbps: number | null };
   xr: boolean | null;
+  /** Wallets, keyboard layout and adapters that exist on this device. */
+  ecosystem: { wallets: string[] | null; keyboard: string | null; bluetoothAdapter: boolean | null; vr: boolean | null; newestEmoji: string | null };
 }
 
 type V = Record<string, any>;
@@ -56,6 +61,8 @@ export function buildHardware(light: LightResult, c: V): HardwareProfile {
       vendor: gl.unmaskedVendor ?? null,
       renderer,
       class: gpuClass(renderer),
+      hardwareDecode: c.mediaCapabilities?.hardwareDecode ?? null,
+      hdrPlayback: c.mediaCapabilities?.hdrPlayback ?? null,
       webgl2: gl.supported === false ? null : !!gl.webgl2,
       webgpu: gpu?.supported && gpu.adapter !== null
         ? { vendor: gpu.vendor, architecture: gpu.architecture, description: gpu.description, isFallback: gpu.isFallbackAdapter }
@@ -98,5 +105,12 @@ export function buildHardware(light: LightResult, c: V): HardwareProfile {
       downlinkMbps: conn.downlink ?? null,
     },
     xr: periph.xr ?? null,
+    ecosystem: {
+      wallets: c.payments?.wallets ?? null,
+      keyboard: c.keyboard?.family ?? null,
+      bluetoothAdapter: c.availability?.bluetoothAdapter ?? null,
+      vr: c.availability?.xr?.vr ?? null,
+      newestEmoji: c.emoji?.newestUnicode ?? null,
+    },
   };
 }

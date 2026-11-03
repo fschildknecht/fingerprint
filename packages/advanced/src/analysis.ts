@@ -3,6 +3,7 @@ import { nav, round } from '@fingerprint/core';
 import type { LightResult } from '@fingerprint/light';
 import { iframeMismatch, ownPropertyOverrides, scoreManipulation, screenMediaMismatch, workerMismatch } from './manipulation';
 import type { ManipulationAnalysis, ManipulationSignal } from './manipulation';
+import { gpuClass } from './collectors/hardware';
 import { detectTor } from './privacy';
 import type { PrivateModeResult, TorAnalysis } from './privacy';
 
@@ -170,6 +171,16 @@ export async function analyze(light: LightResult, c: Components): Promise<Analys
     }
   }
   if (c.canvas?.randomized) inconsistencies.push('Canvas output differs between two identical draws (noise injection)');
+  const apple = os === 'macOS' || os === 'iOS' || os === 'iPadOS';
+  if (c.payments?.applePay?.available && !apple) inconsistencies.push(`ApplePaySession exists but the UA claims ${os}`);
+  // Hardware AV1/HEVC decode requires a real GPU: a "software renderer" that decodes in hardware is a spoofed or virtualised GPU string.
+  if (gpuClass(renderer) === 'software' && (c.mediaCapabilities?.hardwareDecode?.length ?? 0) >= 2) {
+    inconsistencies.push(`WebGL reports a software renderer but media decoding is hardware accelerated (${c.mediaCapabilities.hardwareDecode.join(', ')})`);
+  }
+  const bat = c.battery;
+  if (bat?.supported && bat.charging && Number.isFinite(bat.dischargingTime) && bat.dischargingTime !== null) {
+    inconsistencies.push('Battery reports charging but also a finite discharge time');
+  }
   if (light.screen.availWidth > light.screen.width + 1) inconsistencies.push('screen.availWidth exceeds screen.width');
   // Phones/tablets can't have a window wider than their screen. (Bots and desktop browsers can, e.g. headless defaults.)
   const handheld = light.device.type === 'mobile' || light.device.type === 'tablet';

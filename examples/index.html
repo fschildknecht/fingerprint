@@ -107,13 +107,13 @@ function lightCards(r, title, hint) {
 
 const yn2 = (b) => (b == null ? '–' : b ? 'yes' : 'no');
 function specsCards(c) {
-  const IDS = { 'Browser specs': ['browserSpecs', 'plugins'], 'Payments & sign-in': ['browserSpecs'], 'DRM / protected content': ['drm'], 'Content blockers': ['adBlocker', 'extensions'] };
+  const IDS = { 'Browser specs': ['browserSpecs', 'plugins'], 'Payments & sign-in': ['payments', 'browserSpecs'], 'Media hardware': ['mediaCapabilities', 'emoji'], 'Keyboard & devices': ['keyboard', 'availability'], 'DRM / protected content': ['drm'], 'Content blockers': ['adBlocker', 'extensions'] };
   const card = (t, b) => baseCard(t, b, timing(c, IDS[t]));
   const v = (k) => (c[k]?.ok ? c[k].value : null);
   const yn = (b) => (b == null ? '–' : b ? 'yes' : 'no');
   const out = [];
 
-  const s = v('browserSpecs');
+  const s = v('browserSpecs'), pay = v('payments');
   if (s) {
     const wasm = s.webAssembly ? ['simd', 'threads', 'bulkMemory'].filter((k) => s.webAssembly[k]).join(', ') || 'basic' : 'no';
     const js = Object.values(s.jsFeatures);
@@ -130,11 +130,34 @@ function specsCards(c) {
       ['Plugins', pl ? pl.count + (pl.onlyStandardPdfViewers ? ' (PDF viewers only)' : '') : null],
     ])));
     out.push(card('Payments & sign-in', dl([
-      ['Apple Pay', s.applePay.available ? 'v' + s.applePay.maxVersion + (s.applePay.canMakePayments ? ', can pay' : '') : 'no'],
+      ['Wallets', pay && pay.supported !== false ? (pay.wallets.join(', ') || 'none') : null],
+      ['Apple Pay', pay && pay.applePay && (pay.applePay.available ? 'v' + pay.applePay.maxVersion + (pay.applePay.canMakePayments ? ', can pay' : '') : yn(pay.applePay.paymentRequest && pay.applePay.paymentRequest.supported))],
+      ['Google Pay', pay && pay.googlePay && yn(pay.googlePay.supported) + (pay.googlePay.ready ? ' (card ready)' : '')],
       ['Payment Request API', yn(s.paymentRequest)],
       ['WebAuthn / passkeys', yn(s.webauthn.supported)],
       ['Windows Hello / Touch ID', yn(s.webauthn.platformAuthenticator)],
       ['Passkey autofill', yn(s.webauthn.conditionalMediation)],
+    ])));
+  }
+
+  const mc = v('mediaCapabilities'), em = v('emoji');
+  if (mc || em) {
+    out.push(card('Media hardware', dl([
+      ['Hardware decode', mc && mc.supported !== false ? (mc.hardwareDecode.join(', ') || 'none') : null],
+      ['HDR playback', mc && mc.supported !== false ? (mc.hdrPlayback.join(', ') || 'none') : null],
+      ['WebCodecs HW (H.264 / AV1)', mc && mc.webCodecs && [mc.webCodecs.decode.h264Hw, mc.webCodecs.decode.av1Hw].map(yn).join(' / ')],
+      ['Newest emoji', em && 'Unicode ' + em.newestUnicode],
+    ])));
+  }
+
+  const kb = v('keyboard'), av = v('availability');
+  if (kb || av) {
+    out.push(card('Keyboard & devices', dl([
+      ['Keyboard layout', kb && (kb.supported === false ? 'not exposed' : kb.family || 'other')],
+      ['Bluetooth adapter', av && yn(av.bluetoothAdapter)],
+      ['VR / AR', av && yn(av.xr.vr) + ' / ' + yn(av.xr.ar)],
+      ['Gamepads', av && av.gamepadsConnected],
+      ['Fine / coarse pointer', av && yn(av.pointer.fine) + ' / ' + yn(av.pointer.coarse)],
     ])));
   }
 

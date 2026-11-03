@@ -7,6 +7,10 @@ import { navigatorInfo, timezone, intl, math, css, features, engine } from './sy
 import { connection, webrtc } from './network';
 import { codecs, mediaDevices, speechVoices } from './media';
 import { drm } from './drm';
+import { payments } from './payments';
+import { mediaCapabilities } from './capabilities';
+import { keyboard, availability } from './input';
+import { emoji } from './emoji';
 import { adBlocker } from './adblock';
 import { privateMode } from '../privacy';
 import { sensors, battery, permissions, storage } from './device';
@@ -34,6 +38,11 @@ export const COLLECTORS: Collector[] = [
   codecs,
   speechVoices,
   drm,
+  payments,
+  mediaCapabilities,
+  keyboard,
+  availability,
+  emoji,
   sensors,
   connection,
   webrtc,

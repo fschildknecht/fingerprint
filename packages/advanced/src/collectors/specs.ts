@@ -48,30 +48,6 @@ const syntax = (code: string): boolean => {
   }
 };
 
-async function applePay(): Promise<unknown> {
-  const A = (window as any).ApplePaySession;
-  if (!A) return { available: false };
-  let maxVersion: number | null = null;
-  for (let v = 20; v >= 1; v--) {
-    try {
-      if (A.supportsVersion(v)) {
-        maxVersion = v;
-        break;
-      }
-    } catch {
-      /* unsupported */
-    }
-  }
-  let canMakePayments: boolean | null = null;
-  let canMakePaymentsWithActiveCard: string | null = null;
-  try {
-    canMakePayments = A.canMakePayments();
-  } catch {
-    /* insecure context or blocked in iframe */
-  }
-  return { available: true, maxVersion, canMakePayments, canMakePaymentsWithActiveCard };
-}
-
 async function webauthn(): Promise<unknown> {
   const P = (window as any).PublicKeyCredential;
   if (!P) return { supported: false };
@@ -107,7 +83,7 @@ function cookieWritable(): boolean {
   }
 }
 
-/** Declared capabilities of the browser itself: cookies, payments, WebAuthn, WASM, JS syntax, HTTP version. */
+/** Declared capabilities of the browser itself: cookies, WebAuthn, WASM, JS syntax, HTTP version. */
 export const browserSpecs: Collector = {
   id: 'browserSpecs',
   stable: true,
@@ -131,7 +107,6 @@ export const browserSpecs: Collector = {
     return {
       cookies: { enabled: n.cookieEnabled ?? null, writable: cookieWritable() },
       javascript: { enabled: true, userAgentDataAvailable: !!n.userAgentData },
-      applePay: await applePay(),
       paymentRequest: !!w.PaymentRequest,
       webauthn: await webauthn(),
       webAssembly: wasm && { supported: true, ...wasm, sharedMemory: typeof SharedArrayBuffer === 'function' },
